@@ -1,0 +1,212 @@
+---
+title: "Case 31: Summary of Data Analysis"
+subtitle: "Hypotheses H1 and H2"
+author: "Grace Sen"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    theme: cosmo
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+output-file: index.html
+editor: visual
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Data and R Setup
+
+```{r}
+#| label: setup
+
+library(haven)
+library(dplyr)
+library(knitr)
+
+efcu <- read_sav("Case 31 Data_efcu_4.sav")
+```
+
+# H1: Awareness and Adequacy of Services
+
+## Variables
+
+- **Independent variable:** `q13_r`, awareness of regular share accounts
+- **Dependent variable:** `q33`, agreement that the Credit Union's financial services meet members' needs
+- **Null hypothesis:** The mean Q33 score is equal across all three awareness groups.
+- **Alternative hypothesis:** At least one awareness group has a different mean Q33 score.
+
+The recoded awareness variable uses higher values for greater awareness: 1 = unaware, 2 = aware but have not used, and 3 = aware and have used.
+
+## Descriptive Results
+
+```{r}
+#| label: h1-data
+
+h1_data <- efcu |>
+  transmute(
+    awareness = factor(
+      as.numeric(q13_r),
+      levels = c(1, 2, 3),
+      labels = c(
+        "Unaware",
+        "Aware but have not used",
+        "Aware and have used"
+      )
+    ),
+    adequacy = as.numeric(q33)
+  ) |>
+  filter(!is.na(awareness), !is.na(adequacy))
+
+h1_summary <- h1_data |>
+  group_by(awareness) |>
+  summarise(
+    N = n(),
+    Mean = mean(adequacy),
+    SD = sd(adequacy),
+    Median = median(adequacy),
+    .groups = "drop"
+  )
+
+kable(
+  h1_summary,
+  digits = c(0, 0, 3, 3, 1),
+  caption = "Q33 ratings by regular share-account awareness"
+)
+```
+
+Members who were aware of and had used regular share accounts had the lowest mean Q33 score (**M = 3.077**). The means were higher among members who were unaware (**M = 3.627**) and members who were aware but had not used the account (**M = 3.719**).
+
+## One-Way ANOVA
+
+```{r}
+#| label: h1-anova
+
+h1_model <- aov(adequacy ~ awareness, data = h1_data)
+summary(h1_model)
+
+# Effect size: eta-squared
+h1_anova_table <- summary(h1_model)[[1]]
+h1_eta_squared <- h1_anova_table["awareness", "Sum Sq"] /
+  sum(h1_anova_table[, "Sum Sq"])
+
+h1_eta_squared
+```
+
+The one-way ANOVA was statistically significant, $F(2, 125) = 4.63$, $p = .011$, $\eta^2 = .069$. Therefore, members' opinions about whether financial services met their needs differed across the three awareness groups.
+
+## Assumptions and Follow-Up Tests
+
+```{r}
+#| label: h1-assumptions
+
+# Normality of ANOVA residuals
+shapiro.test(residuals(h1_model))
+
+# Homogeneity of variance
+car::leveneTest(adequacy ~ awareness, data = h1_data)
+
+# Nonparametric robustness check
+kruskal.test(adequacy ~ awareness, data = h1_data)
+
+# Pairwise follow-up comparisons
+TukeyHSD(h1_model)
+```
+
+The residuals were not normally distributed, Shapiro-Wilk $W = 0.878$, $p < .001$. However, the homogeneity-of-variance assumption was met, Levene's $F(2,125) = 0.09$, $p = .917$. The Kruskal-Wallis robustness test was also significant, $\chi^2(2) = 7.11$, $p = .029$, supporting the ANOVA conclusion.
+
+Tukey comparisons showed that members who were aware of and had used the account rated service adequacy lower than both the unaware group ($p = .017$) and the aware-but-not-used group ($p = .011$). The two lower-awareness groups did not differ significantly ($p = .782$).
+
+## H1 Decision
+
+**H1 was supported.** Perceptions of service adequacy varied by regular share-account awareness. However, the highest-awareness group gave the least favorable rating. Because these data are cross-sectional, the result shows an association and does not prove that awareness caused the difference.
+
+# H2: Comparison of Loan-Rate Opinions
+
+## Variables
+
+- **Measure 1:** `Q8_r`, opinion about the rates charged on borrowed funds, recoded so higher scores indicate higher perceived rates
+- **Measure 2:** `q30`, agreement that Credit Union loan rates are lower than competitors' rates
+- **Null hypothesis:** The mean paired difference between Q8r and Q30 is zero.
+- **Alternative hypothesis:** The mean paired difference is not zero.
+
+A paired test is appropriate because both ratings came from the same respondents.
+
+## Descriptive Results
+
+```{r}
+#| label: h2-data
+
+h2_data <- efcu |>
+  transmute(
+    q8r = as.numeric(Q8_r),
+    q30 = as.numeric(q30)
+  ) |>
+  filter(!is.na(q8r), !is.na(q30))
+
+h2_summary <- data.frame(
+  Measure = c(
+    "Q8r - Perceived borrowing rates",
+    "Q30 - Rates lower than competitors"
+  ),
+  N = c(nrow(h2_data), nrow(h2_data)),
+  Mean = c(mean(h2_data$q8r), mean(h2_data$q30)),
+  SD = c(sd(h2_data$q8r), sd(h2_data$q30)),
+  Median = c(median(h2_data$q8r), median(h2_data$q30))
+)
+
+kable(
+  h2_summary,
+  digits = c(0, 0, 3, 3, 1),
+  caption = "Paired loan-rate opinion measures"
+)
+```
+
+Among the **107 members** with valid responses to both questions, the mean Q8r rating was **3.140** and the mean Q30 rating was **3.056**. The mean paired difference was only **0.084** points.
+
+## Paired-Samples t Test
+
+```{r}
+#| label: h2-test
+
+h2_test <- t.test(
+  h2_data$q8r,
+  h2_data$q30,
+  paired = TRUE,
+  conf.level = 0.95
+)
+
+h2_test
+
+# Check the paired differences and run a robust alternative
+h2_difference <- h2_data$q8r - h2_data$q30
+shapiro.test(h2_difference)
+
+wilcox.test(
+  h2_data$q8r,
+  h2_data$q30,
+  paired = TRUE,
+  exact = FALSE
+)
+```
+
+The paired-samples t test was not statistically significant, $t(106) = 0.60$, $p = .549$. The 95% confidence interval for the mean difference was \[-0.193, 0.362\]. The paired differences were not normally distributed. However, the Wilcoxon signed-rank test was also nonsignificant, $V=1367, p=.603$.
+
+## H2 Decision
+
+The results were **consistent with H2** because no statistically significant difference was found between the two loan-rate ratings. However, a nonsignificant test does not prove that the measures are exactly equal; it only indicates that this sample did not provide evidence of a difference.
+
+# Overall Conclusions
+
+- **H1:** Supported. Q33 ratings differed across regular share-account awareness groups. Members who were aware of and had used the account gave the lowest adequacy ratings.
+- **H2:** Consistent with the data. The two loan-rate opinion measures did not differ significantly within respondents.
+
+# Appendix
+
+- [GitHub Repository](https://github.com/gracesen/IBM-6500-Case31-H1-H2)
+- [GitHub Pages Report](https://gracesen.github.io/IBM-6500-Case31-H1-H2/)
